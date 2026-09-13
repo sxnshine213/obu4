@@ -177,8 +177,8 @@ def utag(uid int, username str = None, full_name str = None) - str
     return f'a href=tguserid={uid}{full_name or uid}a'
 
 
-def pbar(done int) - str
-    return [▓▓░░░, ▓▓▓▓░, ▓▓▓▓▓][done - 1]
+def pbar(done: int) -> str:
+    return ["▓▓░░░", "▓▓▓▓░", "▓▓▓▓▓"][done - 1]
 
 
 def fmt_stats(data dict, label str) - str
