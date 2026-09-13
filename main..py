@@ -1,4 +1,5 @@
 #!usrbinenv python3
+# -*- coding: utf-8 -*-
 
 Бот найма и обучения трафферов
 python-telegram-bot = 20.0
@@ -19,7 +20,7 @@ from telegram.ext import (
 )
 
 # ═══════════════════════════════════════════════════════════
-#  КОНФИГУРАЦИЯ — заполни перед запуском
+#  КОНФИГУРАЦИЯ - заполни перед запуском
 # ═══════════════════════════════════════════════════════════
 BOT_TOKEN         = 8701060830:AAE9FpR9UGMlIwV0N9HOH_-Ki5JNYNcN5OA           # токен от @BotFather
 TEAMLEAD_USERNAME = @genera_love23    # без кавычек
@@ -153,7 +154,7 @@ def is_tl(uid int) - bool
 
 
 async def grp_a(ctx ContextTypes.DEFAULT_TYPE, text str) - None
-    Группа А — новые заявки, всегда требуют реакции.
+    Группа А - новые заявки, всегда требуют реакции.
     if GROUP_A_ID
         try
             await ctx.bot.send_message(GROUP_A_ID, text, parse_mode=HTML)
@@ -162,7 +163,7 @@ async def grp_a(ctx ContextTypes.DEFAULT_TYPE, text str) - None
 
 
 async def grp_b(ctx ContextTypes.DEFAULT_TYPE, text str) - None
-    Группа Б — статусы обучения, только отклонения.
+    Группа Б - статусы обучения, только отклонения.
     if GROUP_B_ID
         try
             await ctx.bot.send_message(GROUP_B_ID, text, parse_mode=HTML)
@@ -253,9 +254,9 @@ async def cmd_start(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
     )
     await update.message.reply_text(
         👋 bПривет!bnn
-        [Вставь сюда текст приветствия — суть работы, откуда доход]nn
+        [Вставь сюда текст приветствия - суть работы, откуда доход]nn
         📹 [Ссылка на VSL-видео]nn
-        fВопросы — напиши тимлиду {TEAMLEAD_USERNAME}nn
+        fВопросы - напиши тимлиду {TEAMLEAD_USERNAME}nn
         Заполни короткую анкету 👇,
         reply_markup=KB_START,
         parse_mode=HTML,
@@ -349,8 +350,8 @@ async def cb_experience(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
     await grp_a(ctx,
         f📋 bАнкета заполненаbn
         f👤 {utag(u.id, u.username, u.full_name)}n
-        f🌍 {lead.get('geo','—')}  🎂 {lead.get('age','—')}  
-        f📱 {lead.get('device','—')}n
+        f🌍 {lead.get('geo','-')}  🎂 {lead.get('age','-')}  
+        f📱 {lead.get('device','-')}n
         f💼 Опыт {'Есть → ждёт разговора' if exp == 'yes' else 'Нет → обучение'}
     )
 
@@ -369,9 +370,9 @@ async def _show_newbie(q, u, ctx ContextTypes.DEFAULT_TYPE) - None
         🎓 bУсловия для новичковbnn
         [Вставь сюда свои условия]nn
         📚 3 модуля обученияn
-        • Модуль 1 — базовый мануалn
-        • Модуль 2 — настройка телефонаn
-        • Модуль 3 — сайт-прокладка и аккаунтыnn
+        • Модуль 1 - базовый мануалn
+        • Модуль 2 - настройка телефонаn
+        • Модуль 3 - сайт-прокладка и аккаунтыnn
         fВопросы {TEAMLEAD_USERNAME},
         reply_markup=KB_MOD1,
         parse_mode=HTML,
@@ -385,7 +386,7 @@ async def _show_exp_gate(q, u, ctx ContextTypes.DEFAULT_TYPE) - None
         f🔑 unlock {u.id}    🔄 set_newbie {u.id}
     )
     await q.edit_message_text(
-        👋 Для опытных трафферов — особые условия.nn
+        👋 Для опытных трафферов - особые условия.nn
         ⚠️ bНужен личный разговор с тимлидом.bnn
         fНапиши {TEAMLEAD_USERNAME}nn
         После разговора он откроет тебе доступ.,
@@ -414,19 +415,19 @@ async def cb_cant_write(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
 # ═══════════════════════════════════════════════════════════
 MOD_TEXTS = {
     1 (
-        📖 bМодуль 1 — Базовый мануалbnn
+        📖 bМодуль 1 - Базовый мануалbnn
         [Вставь содержание мануала]nn
         ━━━━━━━━━━n
         📸 bЗаданиеb прочитай, сделай скриншот и отправь его сюда.
     ),
     2 (
-        ⚙️ bМодуль 2 — Настройка телефонаbnn
+        ⚙️ bМодуль 2 - Настройка телефонаbnn
         [Вставь инструкцию по настройке]nn
         ━━━━━━━━━━n
         📸 bЗаданиеb настрой телефон, сделай скриншот и отправь.
     ),
     3 (
-        🌐 bМодуль 3 — Сайт-прокладка и аккаунтыbnn
+        🌐 bМодуль 3 - Сайт-прокладка и аккаунтыbnn
         [Вставь инструкцию]nn
         ━━━━━━━━━━n
         📸 bЗаданиеb отправь скриншотыn
@@ -502,10 +503,10 @@ async def handle_report(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
             f🏆 bВсе модули пройдены!bnn
             fПрогресс {pbar(3)} 33 ✅nn
             fТимлид скоро выдаст контент и доступ.n
-            fНет ответа — напиши сам {TEAMLEAD_USERNAME},
+            fНет ответа - напиши сам {TEAMLEAD_USERNAME},
             parse_mode=HTML,
         )
-    # Иначе — сообщение не в фазе модулей, игнорируем
+    # Иначе - сообщение не в фазе модулей, игнорируем
 
 
 # ═══════════════════════════════════════════════════════════
@@ -516,13 +517,13 @@ async def cmd_help_tl(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
         return
     await update.message.reply_text(
         🤖 bКоманды тимлидаbnn
-        lead ID — карточка лидаn
-        unlock ID — разблокировать опытногоn
-        set_newbie ID — перевести опытного в новичкиn
-        mark_content ID — отметить выдачу контентаnn
-        stats — неделя + месяц (текущие)n
-        stats week N — неделя N текущего годаn
-        stats month N — месяц N (1–12) текущего года,
+        lead ID - карточка лидаn
+        unlock ID - разблокировать опытногоn
+        set_newbie ID - перевести опытного в новичкиn
+        mark_content ID - отметить выдачу контентаnn
+        stats - неделя + месяц (текущие)n
+        stats week N - неделя N текущего годаn
+        stats month N - месяц N (1–12) текущего года,
         parse_mode=HTML,
     )
 
@@ -545,16 +546,16 @@ async def cmd_lead(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
 
     def f(k)
         v = lead.get(k)
-        return v[16] if v else —
+        return v[16] if v else -
 
     await update.message.reply_text(
-        f👤 bЛид {tid}b  @{lead.get('username') or '—'}  
+        f👤 bЛид {tid}b  @{lead.get('username') or '-'}  
         f{lead.get('full_name') or ''}n
         f━━━━━━━━━━n
-        f🌍 {lead.get('geo','—')}  🎂 {lead.get('age','—')}  
-        f📱 {lead.get('device','—')}n
-        f💼 Опыт {lead.get('experience','—')}  Тип {lead.get('lead_type','—')}n
-        fСтадия b{lead.get('stage','—')}bn
+        f🌍 {lead.get('geo','-')}  🎂 {lead.get('age','-')}  
+        f📱 {lead.get('device','-')}n
+        f💼 Опыт {lead.get('experience','-')}  Тип {lead.get('lead_type','-')}n
+        fСтадия b{lead.get('stage','-')}bn
         f━━━━━━━━━━n
         f📅 Зашёл   {f('started_at')}n
         f📋 Анкета  {f('anketa_at')}n
@@ -566,7 +567,7 @@ async def cmd_lead(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
 
 
 async def cmd_unlock(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
-    unlock USER_ID — разблокировать опытного, направить к выдаче контента
+    unlock USER_ID - разблокировать опытного, направить к выдаче контента
     if not is_tl(update.effective_user.id)
         return
     if not ctx.args
@@ -586,7 +587,7 @@ async def cmd_unlock(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
         await ctx.bot.send_message(
             tid,
             ✅ bТимлид открыл тебе доступ!bnn
-            fЖди — скоро получишь контент и инвайт.n{TEAMLEAD_USERNAME},
+            fЖди - скоро получишь контент и инвайт.n{TEAMLEAD_USERNAME},
             parse_mode=HTML,
         )
     except Exception
@@ -594,11 +595,11 @@ async def cmd_unlock(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
             ⚠️ Не удалось написать пользователю (бот заблокирован)
         )
         return
-    await update.message.reply_text(f✅ {tid} разблокирован — ждёт выдачи контента)
+    await update.message.reply_text(f✅ {tid} разблокирован - ждёт выдачи контента)
 
 
 async def cmd_set_newbie(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
-    set_newbie USER_ID — перевести опытного на сценарий новичка
+    set_newbie USER_ID - перевести опытного на сценарий новичка
     if not is_tl(update.effective_user.id)
         return
     if not ctx.args
@@ -618,7 +619,7 @@ async def cmd_set_newbie(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
     try
         await ctx.bot.send_message(
             tid,
-            👋 Тимлид предлагает пройти обучение с нуля — это стандартный путь.nn
+            👋 Тимлид предлагает пройти обучение с нуля - это стандартный путь.nn
             [Вставь условия для новичков]nn
             fВопросы {TEAMLEAD_USERNAME},
             reply_markup=KB_MOD1,
@@ -631,7 +632,7 @@ async def cmd_set_newbie(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
 
 
 async def cmd_mark_content(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
-    mark_content USER_ID — зафиксировать выдачу контента вручную
+    mark_content USER_ID - зафиксировать выдачу контента вручную
     if not is_tl(update.effective_user.id)
         return
     if not ctx.args
@@ -671,7 +672,7 @@ async def cmd_stats(update Update, ctx ContextTypes.DEFAULT_TYPE) - None
 
 
 # ════════════════════════════════════════════════��══════════
-#  SCHEDULED JOB — зависшие лиды (уведомление в Группу Б)
+#  SCHEDULED JOB - зависшие лиды (уведомление в Группу Б)
 # ═══════════════════════════════════════════════════════════
 # (stage → (поле-флаг выполнения, метка, от какого времени считать))
 STUCK_WATCH = {
@@ -736,7 +737,7 @@ def main() - None
     # Приём отчётов (фото  документ)
     app.add_handler(MessageHandler(filters.PHOTO  filters.Document.ALL, handle_report))
 
-    # Проверка зависших — раз в час
+    # Проверка зависших - раз в час
     app.job_queue.run_repeating(job_stuck, interval=CHECK_INTERVAL, first=60)
 
     log.info(🤖 Бот запущен)
