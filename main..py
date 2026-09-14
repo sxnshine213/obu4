@@ -134,26 +134,40 @@ def get_stats(week=None, month=None, year=None):
         r = c.execute("""
             SELECT
                 COUNT(*),
+                SUM(geo IS NOT NULL),
+                SUM(age IS NOT NULL),
+                SUM(stage = 'blocked'),
+                SUM(device IS NOT NULL AND stage != 'blocked'),
                 SUM(anketa_at IS NOT NULL),
-                SUM(qualified_at IS NOT NULL),
                 SUM(lead_type = 'newbie'),
                 SUM(lead_type = 'experienced'),
-                SUM(stage = 'blocked'),
+                SUM(stage = 'wait_teamlead'),
                 SUM(stage IN ('mod1_shown','mod1_done','mod2_shown','mod2_done','mod3_shown','mod3_done','content_given')),
-                SUM(stage IN ('mod2_shown','mod2_done','mod3_shown','mod3_done','content_given')),
-                SUM(stage IN ('mod3_shown','mod3_done','content_given')),
                 SUM(mod1_at IS NOT NULL),
+                SUM(stage IN ('mod2_shown','mod2_done','mod3_shown','mod3_done','content_given')),
                 SUM(mod2_at IS NOT NULL),
+                SUM(stage IN ('mod3_shown','mod3_done','content_given')),
                 SUM(mod3_at IS NOT NULL),
                 SUM(content_at IS NOT NULL)
             FROM leads WHERE {}
         """.format(cond)).fetchone()
     keys = [
-        "total", "anketa", "qualified", "newbies", "experienced",
+        "total",
+        "filled_geo",
+        "filled_age",
         "blocked",
-        "on_mod1", "on_mod2", "on_mod3",
-        "done_mod1", "done_mod2", "done_mod3",
-        "content"
+        "filled_device",
+        "filled_anketa",
+        "newbies",
+        "experienced",
+        "wait_tl",
+        "started_mod1",
+        "done_mod1",
+        "started_mod2",
+        "done_mod2",
+        "started_mod3",
+        "done_mod3",
+        "content",
     ]
     return {k: (v or 0) for k, v in zip(keys, r)}
 
@@ -193,25 +207,44 @@ def pbar(done):
 
 def fmt_stats(data, label):
     n = data["total"]
-    def p(x):
-        return " ({}%)".format(x * 100 // n) if n > 0 else ""
+
+    def p(x, base=None):
+        base = base if base is not None else n
+        return " ({}%)".format(x * 100 // base) if base > 0 else ""
+
     lines = [
         "<b>Статистика: {}</b>\n".format(label),
-        "Запустили бота:        <b>{}</b>".format(n),
-        "Заполнили анкету:      <b>{}</b>{}".format(data["anketa"], p(data["anketa"])),
-        "Квалифицированы:       <b>{}</b>{}".format(data["qualified"], p(data["qualified"])),
-        "  Новички:             <b>{}</b>".format(data["newbies"]),
-        "  Опытные:             <b>{}</b>".format(data["experienced"]),
-        "Заблокировано (до 18): <b>{}</b>".format(data["blocked"]),
+        "<b>Воронка заявок:</b>",
+        "1.  Запустили бота:         <b>{}</b>".format(n),
+        "2.  Указали страну:         <b>{}</b>{}".format(
+            data["filled_geo"], p(data["filled_geo"])),
+        "3.  Указали возраст:        <b>{}</b>{}".format(
+            data["filled_age"], p(data["filled_age"])),
+        "    Заблокировано (до 18):  <b>{}</b>{}".format(
+            data["blocked"], p(data["blocked"], data["filled_age"])),
+        "4.  Выбрали устройство:     <b>{}</b>{}".format(
+            data["filled_device"], p(data["filled_device"])),
+        "5.  Заполнили анкету:       <b>{}</b>{}".format(
+            data["filled_anketa"], p(data["filled_anketa"])),
+        "    Из них новички:         <b>{}</b>".format(data["newbies"]),
+        "    Из них опытные:         <b>{}</b>".format(data["experienced"]),
+        "    Опытные ждут тимлида:   <b>{}</b>".format(data["wait_tl"]),
         "",
-        "--- Обучение ---",
-        "Начали обучение:       <b>{}</b>{}".format(data["on_mod1"], p(data["on_mod1"])),
-        "Дошли до модуля 2:     <b>{}</b>{}".format(data["on_mod2"], p(data["on_mod2"])),
-        "Дошли до модуля 3:     <b>{}</b>{}".format(data["on_mod3"], p(data["on_mod3"])),
-        "Сдали модуль 1:        <b>{}</b>".format(data["done_mod1"]),
-        "Сдали модуль 2:        <b>{}</b>".format(data["done_mod2"]),
-        "Сдали модуль 3:        <b>{}</b>".format(data["done_mod3"]),
-        "Контент выдан:         <b>{}</b>{}".format(data["content"], p(data["content"])),
+        "<b>Обучение:</b>",
+        "6.  Открыли модуль 1:       <b>{}</b>{}".format(
+            data["started_mod1"], p(data["started_mod1"], data["newbies"])),
+        "7.  Сдали модуль 1:         <b>{}</b>{}".format(
+            data["done_mod1"], p(data["done_mod1"], data["started_mod1"])),
+        "8.  Открыли модуль 2:       <b>{}</b>{}".format(
+            data["started_mod2"], p(data["started_mod2"], data["done_mod1"])),
+        "9.  Сдали модуль 2:         <b>{}</b>{}".format(
+            data["done_mod2"], p(data["done_mod2"], data["started_mod2"])),
+        "10. Открыли модуль 3:       <b>{}</b>{}".format(
+            data["started_mod3"], p(data["started_mod3"], data["done_mod2"])),
+        "11. Сдали модуль 3:         <b>{}</b>{}".format(
+            data["done_mod3"], p(data["done_mod3"], data["started_mod3"])),
+        "12. Контент выдан:          <b>{}</b>{}".format(
+            data["content"], p(data["content"], data["done_mod3"])),
     ]
     return "\n".join(lines)
 
