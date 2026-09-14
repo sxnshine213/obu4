@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import asyncio
 import calendar
 import logging
 import sqlite3
@@ -45,6 +46,7 @@ S_MOD2_DONE  = "mod2_done"
 S_MOD3_SHOWN = "mod3_shown"
 S_MOD3_DONE  = "mod3_done"
 S_CONTENT    = "content_given"
+S_BLOCKED    = "blocked"
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -64,7 +66,7 @@ def init_db():
                 username        TEXT,
                 full_name       TEXT,
                 geo             TEXT,
-                age             TEXT,
+                age             INTEGER,
                 device          TEXT,
                 experience      TEXT,
                 lead_type       TEXT,
@@ -130,19 +132,29 @@ def get_stats(week=None, month=None, year=None):
         cond = "1=1"
     with sqlite3.connect(DB_PATH) as c:
         r = c.execute("""
-            SELECT COUNT(*),
-                   SUM(anketa_at    IS NOT NULL),
-                   SUM(qualified_at IS NOT NULL),
-                   SUM(lead_type = 'newbie'),
-                   SUM(lead_type = 'experienced'),
-                   SUM(mod1_at      IS NOT NULL),
-                   SUM(mod2_at      IS NOT NULL),
-                   SUM(mod3_at      IS NOT NULL),
-                   SUM(content_at   IS NOT NULL)
+            SELECT
+                COUNT(*),
+                SUM(anketa_at IS NOT NULL),
+                SUM(qualified_at IS NOT NULL),
+                SUM(lead_type = 'newbie'),
+                SUM(lead_type = 'experienced'),
+                SUM(stage = 'blocked'),
+                SUM(stage IN ('mod1_shown','mod1_done','mod2_shown','mod2_done','mod3_shown','mod3_done','content_given')),
+                SUM(stage IN ('mod2_shown','mod2_done','mod3_shown','mod3_done','content_given')),
+                SUM(stage IN ('mod3_shown','mod3_done','content_given')),
+                SUM(mod1_at IS NOT NULL),
+                SUM(mod2_at IS NOT NULL),
+                SUM(mod3_at IS NOT NULL),
+                SUM(content_at IS NOT NULL)
             FROM leads WHERE {}
         """.format(cond)).fetchone()
-    keys = ["total", "anketa", "qualified", "newbies", "experienced",
-            "mod1", "mod2", "mod3", "content"]
+    keys = [
+        "total", "anketa", "qualified", "newbies", "experienced",
+        "blocked",
+        "on_mod1", "on_mod2", "on_mod3",
+        "done_mod1", "done_mod2", "done_mod3",
+        "content"
+    ]
     return {k: (v or 0) for k, v in zip(keys, r)}
 
 
@@ -176,74 +188,89 @@ def utag(uid, username=None, full_name=None):
 
 
 def pbar(done):
-    return ["[1/3]", "[2/3]", "[3/3]"][done - 1]
+    return ["[1 из 3]", "[2 из 3]", "[3 из 3]"][done - 1]
 
 
 def fmt_stats(data, label):
     n = data["total"]
     def p(x):
         return " ({}%)".format(x * 100 // n) if n > 0 else ""
-    return (
-        "<b>Statistika: {}</b>\n\n".format(label) +
-        "Zayavok:        <b>{}</b>\n".format(n) +
-        "Anketa:         <b>{}</b>{}\n".format(data["anketa"], p(data["anketa"])) +
-        "Kvalifits.:     <b>{}</b>{}\n".format(data["qualified"], p(data["qualified"])) +
-        "  Novichki:     <b>{}</b>\n".format(data["newbies"]) +
-        "  Opytnye:      <b>{}</b>\n".format(data["experienced"]) +
-        "Modul 1:        <b>{}</b>{}\n".format(data["mod1"], p(data["mod1"])) +
-        "Modul 2:        <b>{}</b>{}\n".format(data["mod2"], p(data["mod2"])) +
-        "Modul 3:        <b>{}</b>{}\n".format(data["mod3"], p(data["mod3"])) +
-        "Kontent vydan:  <b>{}</b>{}\n".format(data["content"], p(data["content"]))
-    )
+    lines = [
+        "<b>Статистика: {}</b>\n".format(label),
+        "Запустили бота:        <b>{}</b>".format(n),
+        "Заполнили анкету:      <b>{}</b>{}".format(data["anketa"], p(data["anketa"])),
+        "Квалифицированы:       <b>{}</b>{}".format(data["qualified"], p(data["qualified"])),
+        "  Новички:             <b>{}</b>".format(data["newbies"]),
+        "  Опытные:             <b>{}</b>".format(data["experienced"]),
+        "Заблокировано (до 18): <b>{}</b>".format(data["blocked"]),
+        "",
+        "--- Обучение ---",
+        "Начали обучение:       <b>{}</b>{}".format(data["on_mod1"], p(data["on_mod1"])),
+        "Дошли до модуля 2:     <b>{}</b>{}".format(data["on_mod2"], p(data["on_mod2"])),
+        "Дошли до модуля 3:     <b>{}</b>{}".format(data["on_mod3"], p(data["on_mod3"])),
+        "Сдали модуль 1:        <b>{}</b>".format(data["done_mod1"]),
+        "Сдали модуль 2:        <b>{}</b>".format(data["done_mod2"]),
+        "Сдали модуль 3:        <b>{}</b>".format(data["done_mod3"]),
+        "Контент выдан:         <b>{}</b>{}".format(data["content"], p(data["content"])),
+    ]
+    return "\n".join(lines)
 
 
 # =============================================================
 #  KEYBOARDS
 # =============================================================
 KB_START = InlineKeyboardMarkup([[
-    InlineKeyboardButton("Zapolnit anketu", callback_data="anketa_start")
+    InlineKeyboardButton("Заполнить анкету", callback_data="anketa_start")
 ]])
 
 KB_GEO = InlineKeyboardMarkup([
-    [InlineKeyboardButton("Rossiya",    callback_data="geo_ru"),
-     InlineKeyboardButton("Ukraina",    callback_data="geo_ua")],
-    [InlineKeyboardButton("Belarus",    callback_data="geo_by"),
-     InlineKeyboardButton("Kazakhstan", callback_data="geo_kz")],
-    [InlineKeyboardButton("Drugoe",     callback_data="geo_other")],
+    [InlineKeyboardButton("Россия",    callback_data="geo_ru"),
+     InlineKeyboardButton("Украина",   callback_data="geo_ua")],
+    [InlineKeyboardButton("Казахстан", callback_data="geo_kz"),
+     InlineKeyboardButton("Европа",    callback_data="geo_eu")],
+    [InlineKeyboardButton("Азия",      callback_data="geo_asia")],
 ])
 
-KB_AGE = InlineKeyboardMarkup([
-    [InlineKeyboardButton("Do 18", callback_data="age_u18"),
-     InlineKeyboardButton("18-25", callback_data="age_18")],
-    [InlineKeyboardButton("26-35", callback_data="age_26"),
-     InlineKeyboardButton("36+",   callback_data="age_36")],
-])
+GEO_MAP = {
+    "geo_ru":   "Россия",
+    "geo_ua":   "Украина",
+    "geo_kz":   "Казахстан",
+    "geo_eu":   "Европа",
+    "geo_asia": "Азия",
+}
 
 KB_DEVICE = InlineKeyboardMarkup([
     [InlineKeyboardButton("Android",        callback_data="dev_android")],
     [InlineKeyboardButton("iPhone (iOS)",   callback_data="dev_ios")],
-    [InlineKeyboardButton("Kompyuter",      callback_data="dev_pc")],
-    [InlineKeyboardButton("Net ustrojstva", callback_data="dev_none")],
+    [InlineKeyboardButton("Компьютер",      callback_data="dev_pc")],
+    [InlineKeyboardButton("Нет устройства", callback_data="dev_none")],
 ])
 
+DEV_MAP = {
+    "dev_android": "Android",
+    "dev_ios":     "iPhone (iOS)",
+    "dev_pc":      "Компьютер",
+    "dev_none":    "Нет устройства",
+}
+
 KB_EXP = InlineKeyboardMarkup([
-    [InlineKeyboardButton("Da, est opyt",  callback_data="exp_yes")],
-    [InlineKeyboardButton("Net, novichok", callback_data="exp_no")],
+    [InlineKeyboardButton("Да, есть опыт", callback_data="exp_yes")],
+    [InlineKeyboardButton("Нет, новичок",  callback_data="exp_no")],
 ])
 
 KB_CANT_WRITE = InlineKeyboardMarkup([[
-    InlineKeyboardButton("Ne mogu napisat pervym", callback_data="cant_write")
+    InlineKeyboardButton("Не могу написать первым", callback_data="cant_write")
 ]])
 
 KB_MOD1 = InlineKeyboardMarkup([[
-    InlineKeyboardButton("Nachat Modul 1", callback_data="mod_1_start")
+    InlineKeyboardButton("Начать Модуль 1", callback_data="mod_1_start")
 ]])
 
 
 def kb_next_mod(n):
     return InlineKeyboardMarkup([[
         InlineKeyboardButton(
-            "Perejti k Modulyu {}".format(n),
+            "Перейти к Модулю {}".format(n),
             callback_data="mod_{}_start".format(n)
         )
     ]])
@@ -256,19 +283,19 @@ async def cmd_start(update, ctx):
     u = update.effective_user
     lead_set(u.id, username=u.username, full_name=u.full_name, stage=S_APPLIED)
     await grp_a(ctx,
-        "<b>Novaya zayavka</b>\n"
-        "User: {}\n"
-        "Time: {}".format(
+        "<b>Новая заявка</b>\n"
+        "Пользователь: {}\n"
+        "Время: {}".format(
             utag(u.id, u.username, u.full_name),
             datetime.now().strftime("%d.%m.%Y %H:%M")
         )
     )
     await update.message.reply_text(
-        "Privet!\n\n"
-        "[TEKST_PRIVETSTVIYA]\n\n"
-        "[SSYLKA_NA_VIDEO]\n\n"
-        "Voprosy - napishi timlidu: {}\n\n"
-        "Zapolni korotkuyu anketu:".format(TEAMLEAD_USERNAME),
+        "Привет!\n\n"
+        "[ТЕКСТ_ПРИВЕТСТВИЯ]\n\n"
+        "[ССЫЛКА_НА_ВИДЕО]\n\n"
+        "Вопросы — напиши тимлиду: {}\n\n"
+        "Заполни короткую анкету:".format(TEAMLEAD_USERNAME),
         reply_markup=KB_START,
         parse_mode="HTML",
     )
@@ -282,19 +309,10 @@ async def cb_anketa_start(update, ctx):
     await q.answer()
     lead_set(q.from_user.id, stage=S_GEO)
     await q.edit_message_text(
-        "<b>Iz kakoj ty strany?</b>",
+        "<b>Из какой ты страны?</b>",
         reply_markup=KB_GEO,
         parse_mode="HTML",
     )
-
-
-GEO_MAP = {
-    "geo_ru":    "Rossiya",
-    "geo_ua":    "Ukraina",
-    "geo_by":    "Belarus",
-    "geo_kz":    "Kazakhstan",
-    "geo_other": "Drugoe",
-}
 
 
 async def cb_geo(update, ctx):
@@ -304,39 +322,55 @@ async def cb_geo(update, ctx):
         return
     lead_set(q.from_user.id, geo=GEO_MAP[q.data], stage=S_AGE)
     await q.edit_message_text(
-        "<b>Skolko tebe let?</b>",
-        reply_markup=KB_AGE,
+        "<b>Сколько тебе лет?</b>\n\n"
+        "Напиши цифрой, например: 22",
         parse_mode="HTML",
     )
 
 
-AGE_MAP = {
-    "age_u18": "Do 18",
-    "age_18":  "18-25",
-    "age_26":  "26-35",
-    "age_36":  "36+",
-}
+async def handle_age_input(update, ctx):
+    u     = update.effective_user
+    stage = lead_stage(u.id)
 
-
-async def cb_age(update, ctx):
-    q = update.callback_query
-    await q.answer()
-    if lead_stage(q.from_user.id) != S_AGE:
+    if stage != S_AGE:
         return
-    lead_set(q.from_user.id, age=AGE_MAP[q.data], stage=S_DEVICE)
-    await q.edit_message_text(
-        "<b>Kakoe ustrojstvo dlya raboty?</b>",
+
+    text = update.message.text.strip()
+
+    if not text.isdigit():
+        await update.message.reply_text(
+            "Пожалуйста, напиши возраст цифрой, например: 22"
+        )
+        return
+
+    age = int(text)
+
+    if age < 1 or age > 100:
+        await update.message.reply_text(
+            "Пожалуйста, укажи реальный возраст."
+        )
+        return
+
+    if age < 18:
+        lead_set(u.id, age=age, stage=S_BLOCKED)
+        await grp_a(ctx,
+            "<b>Заблокирован — до 18 лет</b>\n"
+            "Пользователь: {}\n"
+            "Возраст: {}".format(utag(u.id, u.username, u.full_name), age)
+        )
+        await update.message.reply_text(
+            "К сожалению, мы не можем принять тебя на работу.\n"
+            "Минимальный возраст для участия — 18 лет.\n\n"
+            "Удачи!"
+        )
+        return
+
+    lead_set(u.id, age=age, stage=S_DEVICE)
+    await update.message.reply_text(
+        "<b>Какое устройство для работы?</b>",
         reply_markup=KB_DEVICE,
         parse_mode="HTML",
     )
-
-
-DEV_MAP = {
-    "dev_android": "Android",
-    "dev_ios":     "iPhone (iOS)",
-    "dev_pc":      "Kompyuter",
-    "dev_none":    "Net ustrojstva",
-}
 
 
 async def cb_device(update, ctx):
@@ -346,7 +380,7 @@ async def cb_device(update, ctx):
         return
     lead_set(q.from_user.id, device=DEV_MAP[q.data], stage=S_EXP)
     await q.edit_message_text(
-        "<b>Est li opyt v trafike/arbitrazhe?</b>",
+        "<b>Есть ли опыт в трафике/арбитраже?</b>",
         reply_markup=KB_EXP,
         parse_mode="HTML",
     )
@@ -368,12 +402,12 @@ async def cb_experience(update, ctx):
     lead_set(u.id, experience=exp, lead_type=ltype,
              stage=stage, anketa_at=now, qualified_at=now)
 
-    opyt_text = "Est - zhdet razgovora" if exp == "yes" else "Net - obuchenie"
+    opyt_text = "Есть — ждёт разговора" if exp == "yes" else "Нет — идёт в обучение"
     await grp_a(ctx,
-        "<b>Anketa zapolnena</b>\n"
-        "User: {}\n"
-        "Geo: {} | Age: {} | Device: {}\n"
-        "Opyt: {}".format(
+        "<b>Анкета заполнена</b>\n"
+        "Пользователь: {}\n"
+        "Страна: {} | Возраст: {} | Устройство: {}\n"
+        "Опыт: {}".format(
             utag(u.id, u.username, u.full_name),
             lead.get("geo", "-"),
             lead.get("age", "-"),
@@ -390,17 +424,19 @@ async def cb_experience(update, ctx):
 
 async def _show_newbie(q, u, ctx):
     await grp_a(ctx,
-        "<b>Kvalifitsirovan: NOVICHOK</b>\n"
-        "User: {} - idet v obuchenie".format(utag(u.id, u.username, u.full_name))
+        "<b>Квалифицирован: НОВИЧОК</b>\n"
+        "Пользователь: {} — идёт в обучение".format(
+            utag(u.id, u.username, u.full_name)
+        )
     )
     await q.edit_message_text(
-        "<b>Usloviya dlya novichkov:</b>\n\n"
-        "[USLOVIYA_NOVICHOK]\n\n"
-        "3 modulya obucheniya:\n"
-        "- Modul 1 - bazovyj manual\n"
-        "- Modul 2 - nastrojka telefona\n"
-        "- Modul 3 - sajt-prokladka i akkaunty\n\n"
-        "Voprosy? {}".format(TEAMLEAD_USERNAME),
+        "<b>Условия для новичков:</b>\n\n"
+        "[УСЛОВИЯ_НОВИЧОК]\n\n"
+        "3 модуля обучения:\n"
+        "- Модуль 1 — базовый мануал\n"
+        "- Модуль 2 — настройка телефона\n"
+        "- Модуль 3 — сайт-прокладка и аккаунты\n\n"
+        "Вопросы? {}".format(TEAMLEAD_USERNAME),
         reply_markup=KB_MOD1,
         parse_mode="HTML",
     )
@@ -408,17 +444,17 @@ async def _show_newbie(q, u, ctx):
 
 async def _show_exp_gate(q, u, ctx):
     await grp_a(ctx,
-        "<b>OPYTNYJ trafer zhdet razgovora</b>\n"
-        "User: {}\n"
+        "<b>ОПЫТНЫЙ трафер ждёт разговора</b>\n"
+        "Пользователь: {}\n"
         "/unlock {}  |  /set_newbie {}".format(
             utag(u.id, u.username, u.full_name), u.id, u.id
         )
     )
     await q.edit_message_text(
-        "Dlya opytnyh trafferov - osobye usloviya.\n\n"
-        "<b>Nuzhen lichnyj razgovor s timlidom.</b>\n\n"
-        "Napishi: {}\n\n"
-        "Posle razgovora on otkroet tebe dostup.".format(TEAMLEAD_USERNAME),
+        "Для опытных трафферов — особые условия.\n\n"
+        "<b>Нужен личный разговор с тимлидом.</b>\n\n"
+        "Напиши: {}\n\n"
+        "После разговора он откроет тебе доступ.".format(TEAMLEAD_USERNAME),
         reply_markup=KB_CANT_WRITE,
         parse_mode="HTML",
     )
@@ -426,16 +462,16 @@ async def _show_exp_gate(q, u, ctx):
 
 async def cb_cant_write(update, ctx):
     q = update.callback_query
-    await q.answer("Uvedomili timlida")
+    await q.answer("Уведомили тимлида")
     u = q.from_user
     await grp_a(ctx,
-        "<b>Ne mozhet napisat pervym</b>\n"
-        "User: {} | <code>{}</code>\n"
-        "Napishi emu sam!".format(utag(u.id, u.username, u.full_name), u.id)
+        "<b>Не может написать первым</b>\n"
+        "Пользователь: {} | <code>{}</code>\n"
+        "Напиши ему сам!".format(utag(u.id, u.username, u.full_name), u.id)
     )
     await q.edit_message_text(
-        "Timlid poluchil uvedomlenie i napishет sam.\n\n"
-        "Ili napishi pozzhe: {}".format(TEAMLEAD_USERNAME)
+        "Тимлид получил уведомление и напишет сам.\n\n"
+        "Или напиши позже: {}".format(TEAMLEAD_USERNAME)
     )
 
 
@@ -444,24 +480,24 @@ async def cb_cant_write(update, ctx):
 # =============================================================
 MOD_TEXTS = {
     1: (
-        "<b>Modul 1 - Bazovyj manual</b>\n\n"
-        "[SODERZHANIE_MODULYA_1]\n\n"
+        "<b>Модуль 1 — Базовый мануал</b>\n\n"
+        "[СОДЕРЖАНИЕ_МОДУЛЯ_1]\n\n"
         "----------\n"
-        "<b>Zadanie:</b> prochtaj, sdelaj skrinshot i otprav ego syuda."
+        "<b>Задание:</b> прочитай, сделай скриншот и отправь его сюда."
     ),
     2: (
-        "<b>Modul 2 - Nastrojka telefona</b>\n\n"
-        "[INSTRUKCIYA_NASTROJKI]\n\n"
+        "<b>Модуль 2 — Настройка телефона</b>\n\n"
+        "[ИНСТРУКЦИЯ_НАСТРОЙКИ]\n\n"
         "----------\n"
-        "<b>Zadanie:</b> nastraj telefon, sdelaj skrinshot i otprav."
+        "<b>Задание:</b> настрой телефон, сделай скриншот и отправь."
     ),
     3: (
-        "<b>Modul 3 - Sajt-prokladka i akkaunty</b>\n\n"
-        "[INSTRUKCIYA_MODULYA_3]\n\n"
+        "<b>Модуль 3 — Сайт-прокладка и аккаунты</b>\n\n"
+        "[ИНСТРУКЦИЯ_МОДУЛЯ_3]\n\n"
         "----------\n"
-        "<b>Zadanie:</b> otprav skrinshotы:\n"
-        "1. Gotovyj sajt\n"
-        "2. 3 oformlennykh akkaunta"
+        "<b>Задание:</b> отправь скриншоты:\n"
+        "1. Готовый сайт\n"
+        "2. 3 оформленных аккаунта"
     ),
 }
 
@@ -475,11 +511,11 @@ async def cb_mod_start(update, ctx):
     u   = q.from_user
     mod = int(q.data.split("_")[1])
     if lead_stage(u.id) != MOD_ALLOWED[mod]:
-        await q.answer("Snachala zavershite predydushchij etap", show_alert=True)
+        await q.answer("Сначала завершите предыдущий этап", show_alert=True)
         return
     lead_set(u.id, stage=MOD_SHOWN[mod], stuck_notified=0)
     await q.edit_message_text(
-        MOD_TEXTS[mod] + "\n\nVoprosy? {}".format(TEAMLEAD_USERNAME),
+        MOD_TEXTS[mod] + "\n\nВопросы? {}".format(TEAMLEAD_USERNAME),
         parse_mode="HTML",
     )
 
@@ -492,13 +528,13 @@ async def handle_report(update, ctx):
     if stage == S_MOD1_SHOWN:
         lead_set(u.id, stage=S_MOD1_DONE, mod1_at=now, stuck_notified=0)
         await grp_b(ctx,
-            "<b>Modul 1 sdan</b>\n"
-            "User: {}".format(utag(u.id, u.username, u.full_name))
+            "<b>Модуль 1 сдан</b>\n"
+            "Пользователь: {}".format(utag(u.id, u.username, u.full_name))
         )
         await update.message.reply_text(
-            "<b>Modul 1 prinyat!</b>\n\n"
-            "Progress: {}\n\n"
-            "Horoshaya rabota! Sleduyushchij shag:".format(pbar(1)),
+            "<b>Модуль 1 принят!</b>\n\n"
+            "Прогресс: {}\n\n"
+            "Отличная работа! Следующий шаг:".format(pbar(1)),
             reply_markup=kb_next_mod(2),
             parse_mode="HTML",
         )
@@ -506,13 +542,13 @@ async def handle_report(update, ctx):
     elif stage == S_MOD2_SHOWN:
         lead_set(u.id, stage=S_MOD2_DONE, mod2_at=now, stuck_notified=0)
         await grp_b(ctx,
-            "<b>Modul 2 sdan</b>\n"
-            "User: {}".format(utag(u.id, u.username, u.full_name))
+            "<b>Модуль 2 сдан</b>\n"
+            "Пользователь: {}".format(utag(u.id, u.username, u.full_name))
         )
         await update.message.reply_text(
-            "<b>Modul 2 prinyat!</b>\n\n"
-            "Progress: {}\n\n"
-            "Pochti finish! Poslednij modul:".format(pbar(2)),
+            "<b>Модуль 2 принят!</b>\n\n"
+            "Прогресс: {}\n\n"
+            "Почти финиш! Последний модуль:".format(pbar(2)),
             reply_markup=kb_next_mod(3),
             parse_mode="HTML",
         )
@@ -520,23 +556,23 @@ async def handle_report(update, ctx):
     elif stage == S_MOD3_SHOWN:
         lead_set(u.id, stage=S_MOD3_DONE, mod3_at=now, stuck_notified=0)
         await grp_b(ctx,
-            "<b>Modul 3 sdan</b>\n"
-            "User: {}\n"
-            "Gotov k polucheniyu kontenta!".format(utag(u.id, u.username, u.full_name))
+            "<b>Модуль 3 сдан</b>\n"
+            "Пользователь: {}\n"
+            "Готов к получению контента!".format(utag(u.id, u.username, u.full_name))
         )
         await grp_a(ctx,
-            "<b>Obuchenie zaversheno!</b>\n"
-            "User: {}\n"
-            "Vydaj kontent i invite vruchnuyu\n"
-            "Posle vydachi: /mark_content {}".format(
+            "<b>Обучение завершено!</b>\n"
+            "Пользователь: {}\n"
+            "Выдай контент и инвайт вручную\n"
+            "После выдачи: /mark_content {}".format(
                 utag(u.id, u.username, u.full_name), u.id
             )
         )
         await update.message.reply_text(
-            "<b>Vse moduli projdeny!</b>\n\n"
-            "Progress: {}\n\n"
-            "Timlid skoro vydast kontent i dostup.\n"
-            "Net otveta - napishi sam: {}".format(pbar(3), TEAMLEAD_USERNAME),
+            "<b>Все модули пройдены!</b>\n\n"
+            "Прогресс: {}\n\n"
+            "Тимлид скоро выдаст контент и доступ.\n"
+            "Нет ответа — напиши сам: {}".format(pbar(3), TEAMLEAD_USERNAME),
             parse_mode="HTML",
         )
 
@@ -548,14 +584,14 @@ async def cmd_help_tl(update, ctx):
     if not is_tl(update.effective_user.id):
         return
     await update.message.reply_text(
-        "<b>Komandy timlida</b>\n\n"
-        "/lead ID - kartochka lida\n"
-        "/unlock ID - razblokirovat opytnogo\n"
-        "/set_newbie ID - perevesti opytnogo v novichki\n"
-        "/mark_content ID - otmetit vydachu kontenta\n\n"
-        "/stats - nedelya + mesyac (tekushchie)\n"
-        "/stats week N - nedelya N\n"
-        "/stats month N - mesyac N (1-12)",
+        "<b>Команды тимлида</b>\n\n"
+        "/lead ID — карточка лида\n"
+        "/unlock ID — разблокировать опытного\n"
+        "/set_newbie ID — перевести опытного в новички\n"
+        "/mark_content ID — отметить выдачу контента\n\n"
+        "/stats — текущая неделя + месяц\n"
+        "/stats week N — неделя N\n"
+        "/stats month N — месяц N (1-12)",
         parse_mode="HTML",
     )
 
@@ -569,11 +605,11 @@ async def cmd_lead(update, ctx):
     try:
         tid = int(ctx.args[0])
     except ValueError:
-        await update.message.reply_text("ID dolzhen byt chislom")
+        await update.message.reply_text("ID должен быть числом")
         return
     lead = lead_get(tid)
     if not lead:
-        await update.message.reply_text("Lid ne najden")
+        await update.message.reply_text("Лид не найден")
         return
 
     def f(k):
@@ -581,17 +617,17 @@ async def cmd_lead(update, ctx):
         return v[:16] if v else "-"
 
     await update.message.reply_text(
-        "<b>Lid {}</b>  @{}  {}\n"
+        "<b>Лид {}</b>  @{}  {}\n"
         "----------\n"
-        "Geo: {} | Age: {} | Device: {}\n"
-        "Opyt: {} | Tip: {}\n"
-        "Stadiya: <b>{}</b>\n"
+        "Страна: {} | Возраст: {} | Устройство: {}\n"
+        "Опыт: {} | Тип: {}\n"
+        "Стадия: <b>{}</b>\n"
         "----------\n"
-        "Zashel:   {}\n"
-        "Anketa:   {}\n"
-        "Kvalif.:  {}\n"
-        "M1: {}  M2: {}  M3: {}\n"
-        "Kontent:  {}".format(
+        "Зашёл:   {}\n"
+        "Анкета:  {}\n"
+        "Квалиф.: {}\n"
+        "М1: {}  М2: {}  М3: {}\n"
+        "Контент: {}".format(
             tid,
             lead.get("username") or "-",
             lead.get("full_name") or "",
@@ -622,24 +658,24 @@ async def cmd_unlock(update, ctx):
     try:
         tid = int(ctx.args[0])
     except ValueError:
-        await update.message.reply_text("ID dolzhen byt chislom")
+        await update.message.reply_text("ID должен быть числом")
         return
     if not lead_get(tid):
-        await update.message.reply_text("Lid ne najden")
+        await update.message.reply_text("Лид не найден")
         return
 
     lead_set(tid, stage=S_MOD3_DONE)
     try:
         await ctx.bot.send_message(
             tid,
-            "<b>Timlid otkryl tebe dostup!</b>\n\n"
-            "Zhdi - skoro poluchish kontent i invite.\n{}".format(TEAMLEAD_USERNAME),
+            "<b>Тимлид открыл тебе доступ!</b>\n\n"
+            "Жди — скоро получишь контент и инвайт.\n{}".format(TEAMLEAD_USERNAME),
             parse_mode="HTML",
         )
     except Exception:
-        await update.message.reply_text("Ne udalos napisat polzovatelyu (bot zablokirovan?)")
+        await update.message.reply_text("Не удалось написать пользователю (бот заблокирован?)")
         return
-    await update.message.reply_text("{} razblokirovan - zhdet vydachi kontenta".format(tid))
+    await update.message.reply_text("{} разблокирован — ждёт выдачи контента".format(tid))
 
 
 async def cmd_set_newbie(update, ctx):
@@ -651,10 +687,10 @@ async def cmd_set_newbie(update, ctx):
     try:
         tid = int(ctx.args[0])
     except ValueError:
-        await update.message.reply_text("ID dolzhen byt chislom")
+        await update.message.reply_text("ID должен быть числом")
         return
     if not lead_get(tid):
-        await update.message.reply_text("Lid ne najden")
+        await update.message.reply_text("Лид не найден")
         return
 
     lead_set(tid, lead_type="newbie", stage=S_QUALIFIED,
@@ -662,16 +698,16 @@ async def cmd_set_newbie(update, ctx):
     try:
         await ctx.bot.send_message(
             tid,
-            "Timlid predlagaet projti obuchenie s nulya.\n\n"
-            "[USLOVIYA_NOVICHOK]\n\n"
-            "Voprosy? {}".format(TEAMLEAD_USERNAME),
+            "Тимлид предлагает пройти обучение с нуля.\n\n"
+            "[УСЛОВИЯ_НОВИЧОК]\n\n"
+            "Вопросы? {}".format(TEAMLEAD_USERNAME),
             reply_markup=KB_MOD1,
             parse_mode="HTML",
         )
     except Exception:
-        await update.message.reply_text("Ne udalos napisat polzovatelyu")
+        await update.message.reply_text("Не удалось написать пользователю")
         return
-    await update.message.reply_text("{} perevedyon v novichki".format(tid))
+    await update.message.reply_text("{} переведён в новички".format(tid))
 
 
 async def cmd_mark_content(update, ctx):
@@ -683,10 +719,10 @@ async def cmd_mark_content(update, ctx):
     try:
         tid = int(ctx.args[0])
     except ValueError:
-        await update.message.reply_text("ID dolzhen byt chislom")
+        await update.message.reply_text("ID должен быть числом")
         return
     lead_set(tid, stage=S_CONTENT, content_at=datetime.now().isoformat())
-    await update.message.reply_text("Kontent otmechen vydannym dlya {}".format(tid))
+    await update.message.reply_text("Контент отмечен выданным для {}".format(tid))
 
 
 async def cmd_stats(update, ctx):
@@ -696,65 +732,81 @@ async def cmd_stats(update, ctx):
     args = ctx.args or []
     if len(args) >= 2 and args[0] == "week":
         w    = int(args[1])
-        text = fmt_stats(get_stats(week=w, year=now.year), "Nedelya {}, {}".format(w, now.year))
+        text = fmt_stats(
+            get_stats(week=w, year=now.year),
+            "Неделя {}, {}".format(w, now.year)
+        )
     elif len(args) >= 2 and args[0] == "month":
         m    = int(args[1])
-        text = fmt_stats(get_stats(month=m, year=now.year),
-                         "{} {}".format(calendar.month_name[m], now.year))
+        text = fmt_stats(
+            get_stats(month=m, year=now.year),
+            "{} {}".format(calendar.month_name[m], now.year)
+        )
     else:
         cw   = now.isocalendar()[1]
         text = (
-            fmt_stats(get_stats(week=cw, year=now.year),
-                      "Nedelya {} (tekushchaya)".format(cw))
-            + "\n"
-            + fmt_stats(get_stats(month=now.month, year=now.year),
-                        now.strftime("%B %Y"))
+            fmt_stats(
+                get_stats(week=cw, year=now.year),
+                "Неделя {} (текущая)".format(cw)
+            )
+            + "\n\n"
+            + fmt_stats(
+                get_stats(month=now.month, year=now.year),
+                now.strftime("%B %Y")
+            )
         )
     await update.message.reply_text(text, parse_mode="HTML")
 
 
 # =============================================================
-#  JOB - zavsshie lidy
+#  STUCK JOB
 # =============================================================
 STUCK_WATCH = {
-    S_QUALIFIED:  ("mod1_at", "ne nachal Modul 1", "qualified_at"),
-    S_MOD1_SHOWN: ("mod1_at", "zavis na Module 1", "qualified_at"),
-    S_MOD1_DONE:  ("mod2_at", "ne nachal Modul 2", "mod1_at"),
-    S_MOD2_SHOWN: ("mod2_at", "zavis na Module 2", "mod1_at"),
-    S_MOD2_DONE:  ("mod3_at", "ne nachal Modul 3", "mod2_at"),
-    S_MOD3_SHOWN: ("mod3_at", "zavis na Module 3", "mod2_at"),
+    S_QUALIFIED:  ("mod1_at", "не начал Модуль 1", "qualified_at"),
+    S_MOD1_SHOWN: ("mod1_at", "завис на Модуле 1", "qualified_at"),
+    S_MOD1_DONE:  ("mod2_at", "не начал Модуль 2", "mod1_at"),
+    S_MOD2_SHOWN: ("mod2_at", "завис на Модуле 2", "mod1_at"),
+    S_MOD2_DONE:  ("mod3_at", "не начал Модуль 3", "mod2_at"),
+    S_MOD3_SHOWN: ("mod3_at", "завис на Модуле 3", "mod2_at"),
 }
 
 
-async def job_stuck(ctx):
-    threshold = (datetime.now() - timedelta(hours=STUCK_HOURS)).isoformat()
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        for stage, (done_col, label, time_col) in STUCK_WATCH.items():
-            rows = conn.execute(
-                "SELECT * FROM leads "
-                "WHERE stage = ? "
-                "AND {} IS NULL ".format(done_col) +
-                "AND stuck_notified = 0 "
-                "AND {} IS NOT NULL ".format(time_col) +
-                "AND {} < ?".format(time_col),
-                (stage, threshold)
-            ).fetchall()
-            for r in rows:
-                r   = dict(r)
-                uid = r["user_id"]
-                await grp_b(ctx,
-                    "<b>Zavis > {}h</b>\n"
-                    "User: {}\n"
-                    "Stadiya: {}\n"
-                    "/lead {}".format(
-                        STUCK_HOURS,
-                        utag(uid, r.get("username"), r.get("full_name")),
-                        label,
-                        uid
-                    )
-                )
-                lead_set(uid, stuck_notified=1)
+async def check_stuck_loop(app):
+    while True:
+        await asyncio.sleep(CHECK_INTERVAL)
+        threshold = (datetime.now() - timedelta(hours=STUCK_HOURS)).isoformat()
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            for stage, (done_col, label, time_col) in STUCK_WATCH.items():
+                rows = conn.execute(
+                    "SELECT * FROM leads "
+                    "WHERE stage = ? "
+                    "AND {} IS NULL ".format(done_col) +
+                    "AND stuck_notified = 0 "
+                    "AND {} IS NOT NULL ".format(time_col) +
+                    "AND {} < ?".format(time_col),
+                    (stage, threshold)
+                ).fetchall()
+                for r in rows:
+                    r   = dict(r)
+                    uid = r["user_id"]
+                    try:
+                        await app.bot.send_message(
+                            GROUP_B_ID,
+                            "<b>Завис более {}ч</b>\n"
+                            "Пользователь: {}\n"
+                            "Стадия: {}\n"
+                            "/lead {}".format(
+                                STUCK_HOURS,
+                                utag(uid, r.get("username"), r.get("full_name")),
+                                label,
+                                uid
+                            ),
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        log.warning("Stuck notify error: %s", e)
+                    lead_set(uid, stuck_notified=1)
 
 
 # =============================================================
@@ -774,17 +826,21 @@ def main():
 
     app.add_handler(CallbackQueryHandler(cb_anketa_start, pattern="^anketa_start$"))
     app.add_handler(CallbackQueryHandler(cb_geo,          pattern="^geo_"))
-    app.add_handler(CallbackQueryHandler(cb_age,          pattern="^age_"))
     app.add_handler(CallbackQueryHandler(cb_device,       pattern="^dev_"))
     app.add_handler(CallbackQueryHandler(cb_experience,   pattern="^exp_"))
     app.add_handler(CallbackQueryHandler(cb_cant_write,   pattern="^cant_write$"))
     app.add_handler(CallbackQueryHandler(cb_mod_start,    pattern=r"^mod_[123]_start$"))
 
+    # текстовый ввод возраста — перед обработчиком фото
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_age_input))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_report))
 
-    app.job_queue.run_repeating(job_stuck, interval=CHECK_INTERVAL, first=60)
+    async def post_init(application):
+        asyncio.create_task(check_stuck_loop(application))
 
-    log.info("Bot zapushchen")
+    app.post_init = post_init
+
+    log.info("Бот запущен")
     app.run_polling(drop_pending_updates=True)
 
 
